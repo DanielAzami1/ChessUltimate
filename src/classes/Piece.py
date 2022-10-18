@@ -1,23 +1,50 @@
-from Board import Board, Cell
 from src.misc.enums import PieceID, Team, PieceStatus
-from src.misc.exceptions import UnknownPieceIDError, UnknownTeamError
-from abc import ABC, abstractmethod
+from src.misc.exceptions import UnknownPieceIDError, UnknownTeamError, InvalidMovesetError, IllegalMoveError
+from abc import ABC
+import numpy as np
 
 
 class Piece(ABC):
     """Abstract Base Class for Piece objects (pieces on the chess board)"""
-    @abstractmethod  # don't want to instantiate Piece
-    def __init__(self, piece_identifier: PieceID = None, team: Team = Team.A, cell: Cell = None):
-        assert piece_identifier is None or isinstance(piece_identifier, PieceID)
+
+    def __init__(
+        self,
+        *args,
+        **kwargs
+    ):
+        piece_identifier = kwargs["piece_identifier"]
+        team = kwargs["team"]
+        moveset = kwargs["moveset"]
+        try:
+            moveset_multiplier = kwargs["moveset_multiplier"]
+            if not isinstance(moveset_multiplier, range) or not moveset_multiplier:
+                raise InvalidMovesetError(
+                    f"Moveset multiplier '{moveset_multiplier}' improperly defined."
+                )
+            self.moveset_multiplier = moveset_multiplier  # many pieces can move multiple cells, this just saves LOC
+        except KeyError:
+            pass  # some pieces won't have a multiplier (e.g. Pawn, King)
+
+        if not isinstance(piece_identifier, PieceID):
+            raise UnknownPieceIDError(
+                f"Piece '{piece_identifier}' is not a valid piece for this gamemode."
+            )
         if not isinstance(team, Team):
-            raise TypeError(f"Team {team} is not a valid team for this gamemode.")
+            raise UnknownTeamError(
+                f"Team '{team}' is not a valid team for this gamemode."
+            )
+        if not isinstance(moveset, tuple) or not moveset:
+            raise InvalidMovesetError(
+                f"Moveset \n'{moveset}'\n improperly defined."
+            )
+
+        if team is Team.A:  # team A moves 'down' the board, so the move values are inverse
+            moveset = tuple(-1 * val for val in moveset)
+
         self.piece_identifier = piece_identifier
         self.team = team
-        self.alive = None  # whether this piece is still in play / on the board
-        assert cell.occupied_by is None
-        self.cell = cell
-        cell.occupied_by = self
-        '''
+        self.alive = PieceStatus.ALIVE  # whether this piece is still in play / on the board
+        """
         Moveset Logic:
             
             Cells organized in a matrix, therefore possess some arbitrary (x, y) position in the 'board'. To 'move' a
@@ -27,53 +54,132 @@ class Piece(ABC):
             The 'moveset' variable will be assigned a tuple(tuple(int)). Each sub-tuple will hold two ints, an 'x' and
             a 'y' value that will be used to increment or decrement the current x/y value. 
             These values represent the amount of cells a particular move can traverse, i.e. for a Rook, we would have 
-            something like self.moveset = ((1, 0), (2, 0), (3, 0) ... (n-1, 0), (0, 1), (0, 2) ... (0, n-1)), where 'n' 
-            is the number of cells in a particular row or column. 
-        '''
-        self.moveset = None  # moves this piece is able to make
-
-    def move_is_valid(self, requested_move: tuple[int]) -> bool:
+            something like self.moveset = ((1, 0), (0, 1)...), with the addition of a 'multiplier' to allow the piece
+            to move additional cells without having to hard-code those tuples for each permutation. 
         """
-        TODO // Check if the requested_move is a valid move for caller piece.
-        :param requested_move: increment/decrement of (x, y) coords that will land the piece in a new cell.
-        :return: T/F based on whether the requested_move is possible
-        """
-        pass
-
-    def move(self, requested_move: tuple[int]) -> bool:
-        """
-        TODO // First Check to see if the requested_move is valid, if it is, execute the move by changing the cell.
-        :param requested_move: increment/decrement of (x, y) coords that will land the piece in a new cell.
-        :return: T/F based on whether the requested_move was successful or not.
-        """
-        pass
+        self.moveset = np.array(moveset)  # moves this piece is able to make, cast to np.array for vector arithmetic
 
     def __str__(self):
         return self.piece_identifier.value[self.team]
 
 
 class Pawn(Piece):
-    def __init__(self, piece_identifier: PieceID = None, team: Team = Team.A, cell: Cell = None):
-        if not isinstance(piece_identifier, PieceID):
-            raise UnknownPieceIDError(f"Invalid piece ID for Pawn: '{piece_identifier}'")
-        if not isinstance(team, Team):
-            raise UnknownTeamError(f"Piece {piece_identifier} cannot belong to team '{team}'.")
-        self.piece_identifier = PieceID.Pawn
-        self.team = team
-        self.alive = PieceStatus.ALIVE
-        self.moveset = ((1, 0), (-1, 0), (0, 1), (0, -1))  # ((1 right), (1 left), (1 up), (1 down))
+    """
+    Pawn object.
+    """
+    def __init__(self, team: Team = Team.B):
+        super().__init__(
+            piece_identifier=PieceID.Pawn,
+            team=team,
+            moveset=(
+                (0, 1)
+            )  # moves one square 'up' the board
+        )
 
 
+class Bishop(Piece):
+    """
+    Bishop object.
+    """
+    def __init__(self, team: Team = Team.B):
+        super().__init__(
+            piece_identifier=PieceID.Bishop,
+            team=team,
+            moveset=(
+                (1, 1),
+                (-1, 1),
+                (1, -1),
+                (-1, -1)
+            ),
+            moveset_multiplier=range(1, 8)  # Bishop can move up to 7 cells diagonally
+        )
+
+
+class Knight(Piece):
+    """
+    Knight object.
+    """
+    def __init__(self, team: Team = Team.B):
+        super().__init__(
+            piece_identifier=PieceID.Knight,
+            team=team,
+            moveset=(
+                (2, 1),
+                (1, 2),
+                (-2, 1),
+                (2, -1),
+                (-2, -1),
+                (-1, 2),
+                (-1, -2)
+            )
+        )
+
+
+class Rook(Piece):
+    """
+    Rook object.
+    """
+    def __init__(self, team: Team = Team.B):
+        super().__init__(
+            piece_identifier=PieceID.Rook,
+            team=team,
+            moveset=(
+                (1, 0),
+                (0, 1),
+                (-1, 0),
+                (0, -1)
+            ),
+            moveset_multiplier=range(1, 8)
+        )
+
+
+class Queen(Piece):
+    """
+    Queen object.
+    """
+    def __init__(self, team: Team = Team.B):
+        super().__init__(
+            piece_identifier=PieceID.Queen,
+            team=team,
+            moveset=(
+                (1, 0),
+                (0, 1),
+                (-1, 0),
+                (0, -1),
+                (1, 1),
+                (-1, -1),
+                (1, -1),
+                (-1, 1)
+            ),
+            moveset_multiplier=range(1, 8)
+        )
+
+
+class King(Piece):
+    """
+    King object.
+    """
+    def __init__(self, team: Team = Team.B):
+        super().__init__(
+            piece_identifier=PieceID.King,
+            team=team,
+            moveset=(
+                (1, 0),
+                (0, 1),
+                (-1, 0),
+                (0, -1),
+                (1, 1),
+                (-1, 1),
+                (1, -1),
+                (-1, -1)
+            )
+        )
 
 
 if __name__ == "__main__":
-    pawn = Pawn(PieceID.Pawn, Team.B)
+    pawn = Pawn(Team.B)
     print(pawn.piece_identifier)
     print(pawn.team)
     print(pawn)
-
-
-
-
-
-
+    pawn.move((0, 1))
+    print(pawn.moveset)
