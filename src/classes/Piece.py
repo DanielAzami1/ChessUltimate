@@ -1,5 +1,5 @@
 from src.misc.enums import PieceID, Team, PieceStatus
-from src.misc.exceptions import UnknownPieceIDError, UnknownTeamError, InvalidMovesetError, IllegalMoveError
+from src.misc.exceptions import UnknownPieceIDError, UnknownTeamError, InvalidMovesetError
 from abc import ABC
 import numpy as np
 
@@ -14,7 +14,7 @@ class Piece(ABC):
     ):
         piece_identifier = kwargs["piece_identifier"]
         team = kwargs["team"]
-        moveset = kwargs["moveset"]
+        moveset = np.atleast_2d(np.array(kwargs["moveset"]))  # moves piece is able to make, cast to np.array for vector arithmetic
         try:
             moveset_multiplier = kwargs["moveset_multiplier"]
             if not isinstance(moveset_multiplier, range) or not moveset_multiplier:
@@ -33,13 +33,13 @@ class Piece(ABC):
             raise UnknownTeamError(
                 f"Team '{team}' is not a valid team for this gamemode."
             )
-        if not isinstance(moveset, tuple) or not moveset:
+        if not isinstance(moveset, np.ndarray) or not np.any(moveset):
             raise InvalidMovesetError(
                 f"Moveset \n'{moveset}'\n improperly defined."
             )
 
-        if team is Team.A:  # team A moves 'down' the board, so the move values are inverse
-            moveset = tuple(-1 * val for val in moveset)
+        if team is Team.B:  # team A moves 'down' the board, so the move values are inverse
+            moveset *= -1
 
         self.piece_identifier = piece_identifier
         self.team = team
@@ -57,10 +57,16 @@ class Piece(ABC):
             something like self.moveset = ((1, 0), (0, 1)...), with the addition of a 'multiplier' to allow the piece
             to move additional cells without having to hard-code those tuples for each permutation. 
         """
-        self.moveset = np.array(moveset)  # moves this piece is able to make, cast to np.array for vector arithmetic
+        self.moveset = moveset
 
     def __str__(self):
         return self.piece_identifier.value[self.team]
+
+    def __repr__(self):
+        return f"\nName: {self.piece_identifier}\n" \
+               f"Team: {self.team}\n" \
+               f"Moveset: {self.moveset}\n" \
+               f"Has Multiplier: {hasattr(self, 'moveset_multiplier')}"
 
 
 class Pawn(Piece):
@@ -181,5 +187,4 @@ if __name__ == "__main__":
     print(pawn.piece_identifier)
     print(pawn.team)
     print(pawn)
-    pawn.move((0, 1))
     print(pawn.moveset)
