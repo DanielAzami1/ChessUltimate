@@ -1,4 +1,4 @@
-from src.classes import Piece as _
+from src.classes import piece as _
 from src.misc.enums import Team
 
 """
