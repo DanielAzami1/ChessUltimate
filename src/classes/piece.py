@@ -12,21 +12,12 @@ class Piece(ABC):
     @abstractmethod
     def __init__(
             self,
-            *args,
             **kwargs
     ):
         piece_identifier = kwargs["piece_identifier"]
         team = kwargs["team"]
         moveset = np.atleast_2d(np.array(kwargs["moveset"]))  # cast to ndarray for vector arithmetic
-        try:
-            moveset_multiplier = kwargs["moveset_multiplier"]
-            if not isinstance(moveset_multiplier, range) or not moveset_multiplier:
-                raise InvalidMovesetError(
-                    f"Moveset multiplier '{moveset_multiplier}' improperly defined."
-                )
-            self.moveset_multiplier = moveset_multiplier  # many pieces can move multiple cells, this just saves LOC
-        except KeyError:
-            pass  # some pieces won't have a multiplier (e.g. Pawn, King)
+        moveset_multiplier = kwargs["moveset_multiplier"]  # many pieces can move multiple cells, this just saves LOC
 
         if not isinstance(piece_identifier, PieceID):
             raise UnknownPieceIDError(
@@ -39,6 +30,10 @@ class Piece(ABC):
         if not isinstance(moveset, np.ndarray) or not np.any(moveset):
             raise InvalidMovesetError(
                 f"Moveset \n'{moveset}'\n improperly defined."
+            )
+        if not isinstance(moveset_multiplier, range) or not moveset_multiplier:
+            raise InvalidMovesetError(
+                f"Moveset multiplier '{moveset_multiplier}' improperly defined."
             )
 
         self.piece_identifier = piece_identifier
@@ -59,6 +54,7 @@ class Piece(ABC):
         """
         if team is Team.B: moveset *= -1  # team A moves 'down' the board, so the move values are inverse
         self.moveset = moveset
+        self.moveset_multiplier = moveset_multiplier
 
     def __str__(self):
         return self.piece_identifier.value[self.team]
@@ -75,14 +71,14 @@ class Pawn(Piece):
     """
     Pawn object.
     """
-
     def __init__(self, team: Team = Team.B):
         super().__init__(
             piece_identifier=PieceID.Pawn,
             team=team,
             moveset=(
                 (0, 1)
-            )  # moves one square 'down' the board
+            ),
+            moveset_multiplier=range(1, 2)
         )
 
 
@@ -90,7 +86,6 @@ class Bishop(Piece):
     """
     Bishop object.
     """
-
     def __init__(self, team: Team = Team.B):
         super().__init__(
             piece_identifier=PieceID.Bishop,
@@ -109,7 +104,6 @@ class Knight(Piece):
     """
     Knight object.
     """
-
     def __init__(self, team: Team = Team.B):
         super().__init__(
             piece_identifier=PieceID.Knight,
@@ -122,7 +116,8 @@ class Knight(Piece):
                 (-2, -1),
                 (-1, 2),
                 (-1, -2)
-            )
+            ),
+            moveset_multiplier=range(1, 2)
         )
 
 
@@ -130,7 +125,6 @@ class Rook(Piece):
     """
     Rook object.
     """
-
     def __init__(self, team: Team = Team.B):
         super().__init__(
             piece_identifier=PieceID.Rook,
@@ -149,7 +143,6 @@ class Queen(Piece):
     """
     Queen object.
     """
-
     def __init__(self, team: Team = Team.B):
         super().__init__(
             piece_identifier=PieceID.Queen,
@@ -172,7 +165,6 @@ class King(Piece):
     """
     King object.
     """
-
     def __init__(self, team: Team = Team.B):
         super().__init__(
             piece_identifier=PieceID.King,
@@ -186,7 +178,8 @@ class King(Piece):
                 (-1, 1),
                 (1, -1),
                 (-1, -1)
-            )
+            ),
+            moveset_multiplier=range(1, 2)
         )
 
 

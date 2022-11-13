@@ -1,10 +1,10 @@
 from src.classes import piece
 from src.misc.enums import GameType, CellID
-from src.misc.exceptions import UnknownGameTypeError, IllegalMoveError
+from src.misc.exceptions import UnknownGameTypeError, IllegalMoveError, BadMoveError
 from src.misc.utils import log_debug
 from src.misc.constants import DEFAULT_STARTING_CHESS_CONFIG
 from loguru import logger
-from numpy import array, ndarray, array_equal, flip
+import numpy as np
 
 
 class Board:
@@ -69,7 +69,7 @@ class Cell:
             self,
             cell_identifier: CellID,
             occupied_by: piece.Piece = None,
-            cell_position: ndarray = (0, 0)
+            cell_position: np.ndarray = (0, 0)
     ):
         self.cell_identifier = cell_identifier
         self.occupied_by = occupied_by
@@ -95,36 +95,34 @@ class PieceController:
         'move' a piece from current_cell to target_cell. Return T if move is successful or raise an error if the move
         is 'illegal', or return F if there is no piece in current_cell.
         """
-        if current_cell is target_cell:
-            raise IllegalMoveError("Must select a NEW cell to move to.")
-
         focused_piece = current_cell.occupied_by
-        if focused_piece is None:  # if there is no piece in current_cell for some reason
-            logger.warning(f"UNABLE to move piece in cell {current_cell.cell_identifier} - Cell is empty")
-            return False
+
+        if current_cell is target_cell or focused_piece is None:
+            raise BadMoveError("Move CANNOT be executed - current and target cells are the same or there is no piece"
+                               " to move.")
 
         moveset = focused_piece.moveset
-        cur_pos, new_pos = array(current_cell.cell_position), array(target_cell.cell_position)
-        requested_move = flip(new_pos - cur_pos)  # I messed up my coords logic lol
-        moveset_multiplier = focused_piece.moveset_multiplier if hasattr(focused_piece, "moveset_multiplier") else None
+        moveset_multiplier = focused_piece.moveset_multiplier
+        cur_pos, new_pos = np.array(current_cell.cell_position), np.array(target_cell.cell_position)
+        requested_move = np.flip(new_pos - cur_pos)
 
-        move_valid = self.move_present_in_moveset(requested_move, moveset, moveset_multiplier)
+        move_valid = self.move_present_in_moveset(requested_move, moveset, moveset_multiplier)  # dict if valid
         if not move_valid:
             raise IllegalMoveError(
                 f"'{focused_piece}' ({focused_piece.piece_identifier}, {focused_piece.team}) CANNOT"
                 f" MOVE from cell {current_cell.cell_identifier} to cell {target_cell.cell_identifier}"
             )
 
-        if type(move_valid) is dict:  # if the piece used multiplier to traverse -> dict returned -> check for blockers
-            move_blocked = self.move_blocked_by_piece(cur_pos, **move_valid)
-            if move_blocked:
-                logger.warning(f"{focused_piece} move BLOCKED by piece")
-                return False
+        move_blocked = self.move_blocked_by_piece(cur_pos, **move_valid)
+        if move_blocked:
+            logger.warning(f"{focused_piece} move {requested_move} BLOCKED by piece {move_blocked['blocking_piece']}"
+                           f" at cell {move_blocked['blocking_cell']}")
+            return False
 
         piece_in_target_cell = target_cell.occupied_by
         if piece_in_target_cell is not None:  # if there is a piece already in target_cell
             if piece_in_target_cell.team is focused_piece.team:
-                logger.warning(f"{focused_piece} move BLOCKED by friendly piece {piece_in_target_cell}"
+                logger.warning(f"{focused_piece} move {requested_move} BLOCKED by friendly piece {piece_in_target_cell}"
                                f" (team {focused_piece.team})")
                 return False
             else:
@@ -135,16 +133,16 @@ class PieceController:
         current_cell.occupied_by = None
         logger.success(
             f"Piece '{focused_piece}' ({focused_piece.piece_identifier}, {focused_piece.team}) "
-            f"MOVED from cell {current_cell.cell_identifier} to cell {target_cell.cell_identifier}"
+            f"MOVED {requested_move} from cell {current_cell.cell_identifier} to cell {target_cell.cell_identifier}"
         )
         return True
 
-    def move_blocked_by_piece(self, cur_pos: ndarray, **multiplier_info):
+    def move_blocked_by_piece(self, cur_pos: np.ndarray, **multiplier_info) -> dict:
         """
         Check to see if there is a piece in between the current_cell and the target_cell for piece movement purposes.
         """
         multiplier_used = multiplier_info["multiplier_used"]
-        move = multiplier_info["move"] / multiplier_used
+        move = multiplier_info["move"] / multiplier_used  # find the base move without the multiplier
         multipliers_to_check = range(1, multiplier_used)
         for multiplier in multipliers_to_check:
             tmp_move = move * multiplier
@@ -153,25 +151,22 @@ class PieceController:
             cell = self.board[x][y]
             piece_at_cell = cell.occupied_by
             if piece_at_cell is not None:
-                return True
-        return False
+                return {
+                    "blocking_piece": piece_at_cell,
+                    "blocking_cell": cell.cell_identifier
+                }
 
     @staticmethod
-    def move_present_in_moveset(requested_move: ndarray, moveset: ndarray, moveset_multiplier: range):
+    def move_present_in_moveset(requested_move: np.ndarray, moveset: np.ndarray, moveset_multiplier: range) -> dict:
         """
         Checks to see if requested_move is present in moveset. If the piece has a moveset_multiplier, checks to see
         if there is some multiplier that creates a match.
         """
-        if any(array_equal(move, requested_move) for move in moveset):
-            return True
-        elif moveset_multiplier is not None:
-            for multiplier in moveset_multiplier:
-                multiplied_moveset = moveset * multiplier
-                for move in multiplied_moveset:
-                    if array_equal(move, requested_move):
-                        return {"move": move, "multiplier_used": multiplier}
-        else:
-            return False
+        for multiplier in moveset_multiplier:
+            multiplied_moveset = moveset * multiplier
+            for move in multiplied_moveset:
+                if np.array_equal(move, requested_move):
+                    return {"move": move, "multiplier_used": multiplier}
 
     @staticmethod
     def attack_piece(enemy_piece: piece.Piece) -> piece.Piece:
@@ -202,8 +197,12 @@ if __name__ == "__main__":
     chess_board.piece_controller.move_piece(chess_board.board[1][0], chess_board.board[2][0])
     logger.info(chess_board)
 
-    chess_board.piece_controller.move_piece(chess_board.board[0][0], chess_board.board[1][0])
+    chess_board.piece_controller.move_piece(chess_board.board[2][0], chess_board.board[3][0])
+    chess_board.piece_controller.move_piece(chess_board.board[3][0], chess_board.board[4][0])
+    chess_board.piece_controller.move_piece(chess_board.board[4][0], chess_board.board[5][0])
+    logger.info(chess_board)
+    chess_board.piece_controller.move_piece(chess_board.board[5][0], chess_board.board[6][0])
+    chess_board.piece_controller.move_piece(chess_board.board[0][0], chess_board.board[6][0])
+
     logger.info(chess_board)
 
-    chess_board.piece_controller.move_piece(chess_board.board[1][0], chess_board.board[1][0])
-    logger.info(chess_board)

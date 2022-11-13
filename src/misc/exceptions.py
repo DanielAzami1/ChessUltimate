@@ -37,3 +37,11 @@ class IllegalMoveError(Exception):
     """
     pass
 
+
+class BadMoveError(Exception):
+    """
+    Thrown when a request to move a piece is junk - i.e. trying to move a non-existent piece, trying to move to the same
+    cell, etc.
+    """
+    pass
+
