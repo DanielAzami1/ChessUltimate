@@ -1,4 +1,5 @@
 from loguru import logger
+import sys
 
 
 def log_debug(**kwargs):
@@ -9,4 +10,8 @@ def log_debug(**kwargs):
         logger.debug(f"\n{variable} : {kwargs[variable]}")
 
 
-
+def check_running_from_venv():
+    """
+    Check if the Python interpreter is running from the venv. Taken from venv docs.
+    """
+    return sys.prefix == sys.base_prefix
